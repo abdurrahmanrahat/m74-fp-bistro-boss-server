@@ -41,9 +41,23 @@ async function run() {
             Users Collection apis
         -----------------------*/
 
+        // get all users from db
+        app.get('/users', async (req, res) => {
+            const result = await usersCollection.find().toArray();
+            res.send(result);
+        })
+
+
         // Create users and save to the db
         app.post('/users', async (req, res) => {
             const user = req.body;
+            // console.log(user);
+            const query = { email: user.email };
+            const existingUser = await usersCollection.findOne(query);
+            // console.log('existing user', existingUser);
+            if (existingUser) {
+                return res.send({ message: 'User already exits' });
+            }
             const result = await usersCollection.insertOne(user);
             res.send(result);
         })
