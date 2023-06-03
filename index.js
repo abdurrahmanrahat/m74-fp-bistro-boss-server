@@ -209,7 +209,7 @@ async function run() {
         app.post('/create-payment-intent', verifyJWT, async (req, res) => {
             const { totalPrice } = req.body;
             console.log(totalPrice);
-            const amount = totalPrice * 100;
+            const amount = parseInt(totalPrice * 100);
             console.log(amount);
             const paymentIntent = await stripe.paymentIntents.create({
                 amount: amount,
@@ -234,6 +234,76 @@ async function run() {
             const deleteResult = await cartCollection.deleteMany(query);
 
             res.send({ insertResult, deleteResult });
+        })
+
+        /*--------------------------
+            admin api
+        ----------------------------*/
+        // Get users length, products length from db
+        app.get('/admin-stats', verifyJWT, verifyAdmin, async (req, res) => {
+            const users = await usersCollection.estimatedDocumentCount();
+            const products = await menuCollection.estimatedDocumentCount();
+            const orders = await paymentCollection.estimatedDocumentCount();
+
+            // best way to get sum of a field is to use group and sum operator, but we do a bangla system. haha
+            const payments = await paymentCollection.find().toArray();
+            const revenue = payments.reduce((sum, payment) => sum + payment.totalPrice, 0)
+
+            res.send({
+                revenue,
+                users,
+                products,
+                orders
+            })
+        })
+
+        /*
+         * ---------------
+         * BANGLA SYSTEM(second best solution)
+         * ---------------
+         * 1. load all payments
+         * 2. for each payment, get the menuItems array
+         * 3. for each item in the menuItems array get the menuItem from the menu collection
+         * 4. put them in an array: allOrderedItems
+         * 5. separate allOrderedItems by category using filter
+         * 6. now get the quantity by using length: pizzas.length
+         * 7. for each category use reduce to get the total amount spent on this category
+         * 
+        */
+
+        // 
+        app.get('/order-stats', verifyJWT, verifyAdmin, async (req, res) => {
+            const pipeline = [
+                {
+                    $lookup: {
+                        from: 'menu',
+                        localField: 'menuItems',
+                        foreignField: '_id',
+                        as: 'menuItemsData'
+                    }
+                },
+                {
+                    $unwind: '$menuItemsData'
+                },
+                {
+                    $group: {
+                        _id: '$menuItemsData.category',
+                        count: { $sum: 1 },
+                        total: { $sum: '$menuItemsData.price' }
+                    }
+                },
+                {
+                    $project: {
+                        category: '$_id',
+                        count: 1,
+                        total: { $round: ['$total', 2] },
+                        _id: 0
+                    }
+                }
+            ];
+
+            const result = await paymentCollection.aggregate(pipeline).toArray();
+            res.send(result);
         })
 
 
